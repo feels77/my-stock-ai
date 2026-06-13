@@ -8,10 +8,42 @@
 ## [미출시] — 개발 중
 
 ### 예정
-- 황금거위 자산배분 엔진 — 목표 비중 + 신호등 (Phase 2)
 - AI 주간 점검 리포트 자동 생성 (Phase 3)
 - Google Drive 동기화 / JSON 백업 (Phase 4)
 - 현재가 실시간 API 연결 (Phase 5)
+
+---
+
+## [Phase 2 - 부분] — 2026-06-13
+
+### 추가 (Added)
+- `src/hooks/useTargetAllocation.js` 신규 생성
+  - 자산군별 목표 비중 관리 + localStorage(`golden_goose_target`) 저장/복원
+  - `getSignal(group, currentPct, targetPct)` 신호등 판정 함수 export
+  - 기본값: 연금형 40% / 성장형 20% / 방어형 20% / 파킹형 15% / 현금 5%
+- `src/components/AllocationPanel.jsx` 신규 생성
+  - 내자산 탭 상단 자산배분 신호등 UI
+  - 자산군별 현재 비중 / 목표 비중 / 게이지 바 표시
+  - 신호등 로직: 🟢 비중 확대 / 🔴 비중 축소 / 🟡 유지 (허용오차 ±5%p)
+  - 현금 자산군 신호 반전 적용
+  - ⚙️ 목표 조정 패널: 슬라이더 + 합계 100% 검증 + localStorage 저장
+- `ACCOUNTS` 상수 추가 (`App.jsx` 모듈 레벨)
+  - 6개 계좌 고정: KB증권 CMA/ISA/신연금저축/신연금저축2/개인퇴직연금(IRP), 토스증권 미국주식
+- `useAssets.js`에 `getGroupSummary()` 추가
+  - 자산군별 평가금액 및 비중(%) 계산, 공개 인터페이스 export
+
+### 변경 (Changed)
+- `App.jsx` 자산 추가 폼 계좌 입력 방식 변경
+  - 버튼 선택 방식 → `<select>` 드롭다운 (6개 고정 계좌)
+  - 기본 계좌: `KB증권 - ISA`
+- `App.jsx` 내자산 탭 그룹별 요약 그리드 → `AllocationPanel` 컴포넌트로 교체
+  - 기존: 단순 비중 % 표시 (3열 그리드)
+  - 변경: 신호등 + 게이지 바 + 목표 조정 슬라이더
+
+### 유지 (Unchanged)
+- 기존 자산/거래 데이터 구조 동일
+- localStorage `golden_goose_assets`, `golden_goose_logs` 키 동일
+- Phase 1.5A/1.5B 모든 기능 유지
 
 ---
 
