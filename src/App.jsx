@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAssets } from './hooks/useAssets';
-import useTargetAllocation from './hooks/useTargetAllocation';
+import useTargetAllocation, { getSignal } from './hooks/useTargetAllocation';
 import AssetDetailModal from './components/AssetDetailModal';
 import AllocationPanel from './components/AllocationPanel';
 
@@ -379,6 +379,11 @@ export default function App() {
   const [showAssetForm, setShowAssetForm] = useState(false);
   const [assetMsg, setAssetMsg] = useState('');
 
+  // ─── AI 주간 점검 리포트 상태 (Phase 3) ────────────────────────────
+  const [showReport, setShowReport] = useState(false);
+  const [reportText, setReportText] = useState('');
+  const [copySuccess, setCopySuccess] = useState(false);
+
   // ─── 상세 모달 상태 (UI 전용) ────────────────────────────────────
   const [selectedAsset, setSelectedAsset] = useState(null);
 
@@ -431,6 +436,90 @@ export default function App() {
   // ─── 거래 삭제 (confirm → removeTrade) ───────────────────────────
   const deleteTrade = (id) => {
     if (window.confirm('이 거래 내역을 삭제하시겠습니까?')) removeTrade(id);
+  };
+
+  // ─── AI 주간 점검 리포트 생성 (Phase 3) ──────────────────────────
+  const generateWeeklyReport = () => {
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('ko-KR', {
+      year: 'numeric', month: 'long', day: 'numeric', weekday: 'short',
+    });
+    const timeStr = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+
+    // 1. 포트폴리오 요약
+    const lines = [
+      '# 🫕 황금거위 주간 포트폴리오 점검 리포트',
+      `생성일시: ${dateStr} ${timeStr}`,
+      '',
+      '## 1. 포트폴리오 요약',
+      `- 총 평가금액: \u20a9${fmtNum(Math.round(totalAssetValue))}`,
+      `- 총 매수금액: \u20a9${fmtNum(Math.round(totalCost))}`,
+      `- 총 손익: ${totalPnL >= 0 ? '+' : ''}\u20a9${fmtNum(Math.round(totalPnL))} (${fmtPct(totalPnLPct)})`,
+      `- 보유 자산 수: ${assets.length}개 / 거래 이력: ${transactions.length}건`,
+    ];
+
+    // 2. 자산군별 현황
+    const grpSummary = getGroupSummary();
+    lines.push(
+      '',
+      '## 2. 자산군별 현황 (신호등)',
+      '| 자산군 | 현재비중 | 목표비중 | 괴리 | 신호 |',
+      '|--------|---------|---------|------|------|',
+    );
+    grpSummary.forEach(g => {
+      const tgt = target[g.group] || 0;
+      const sig = getSignal(g.group, g.pct, tgt);
+      const diff = g.pct - tgt;
+      const diffStr = `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}%p`;
+      lines.push(`| ${g.group} | ${g.pct.toFixed(1)}% | ${tgt}% | ${diffStr} | ${sig.emoji} ${sig.msg} |`);
+    });
+
+    // 3. 집중 투자 위험 (단일 종목 30% 초과)
+    lines.push('', '## 3. 집중 투자 위험 점검');
+    const riskyAssets = assets.filter(a => {
+      const pct = totalAssetValue > 0 ? (a.quantity * a.currentPrice / totalAssetValue) * 100 : 0;
+      return pct > 30;
+    });
+    if (riskyAssets.length === 0) {
+      lines.push('✔️ 단일 종목 30% 초과 없음 — 집중 투자 위험 없음');
+    } else {
+      riskyAssets.forEach(a => {
+        const pct = totalAssetValue > 0 ? (a.quantity * a.currentPrice / totalAssetValue) * 100 : 0;
+        lines.push(`⚠️ [주의] ${a.name}: ${pct.toFixed(1)}% — 단일 종목 30% 초과, 리밸런싱 검토 필요`);
+      });
+    }
+
+    // 4. 최근 30일 거래 내역
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    const recent = transactions.filter(t => new Date(t.date) >= cutoff);
+    const buys  = recent.filter(t => t.type === '매수');
+    const sells = recent.filter(t => t.type === '매도');
+    const tradeAssetNames = [...new Set(recent.map(t => {
+      const a = assets.find(x => x.id === t.assetId);
+      return a ? a.name : null;
+    }).filter(Boolean))];
+    lines.push(
+      '',
+      '## 4. 최근 30일 거래 내역',
+      `- 매수 ${buys.length}건 / 매도 ${sells.length}건 (전체 ${recent.length}건)`,
+    );
+    if (tradeAssetNames.length > 0) {
+      lines.push(`- 거래 종목: ${tradeAssetNames.join(', ')}`);
+    } else {
+      lines.push('- 거래 내역 없음');
+    }
+
+    // 5. AI 프롬프트 (고정)
+    lines.push(
+      '',
+      '---',
+      '위 데이터를 바탕으로 현재 포트폴리오를',
+      '황금거위 투자 원칙에 따라 진단해줘.',
+      '리밸런싱이 필요한 항목과 구체적인 행동 제안을 해줘.',
+    );
+
+    return lines.join('\n');
   };
 
   // totalAssetValue / totalCost / totalPnL / totalPnLPct → useAssets 훅에서 제공
@@ -2366,6 +2455,68 @@ ${etfOpt.goal} 목적 포트폴리오
                 {assetMsg}
               </div>
             )}
+
+            {/* ══════════════════════════════════════════════════════ */}
+            {/* 🤖 AI 주간 점검 리포트 (Phase 3)                     */}
+            {/* ══════════════════════════════════════════════════════ */}
+            <div className="mb-3">
+              <button
+                onClick={() => {
+                  const text = generateWeeklyReport();
+                  setReportText(text);
+                  setShowReport(true);
+                  setCopySuccess(false);
+                }}
+                className="w-full py-3.5 bg-gradient-to-r from-violet-500 to-purple-600 text-white rounded-2xl font-bold shadow-md flex items-center justify-center gap-2 hover:shadow-lg transition"
+              >
+                <span>🤖</span>
+                <span>AI 주간 점검 리포트 생성</span>
+              </button>
+
+              {showReport && reportText && (
+                <div className="mt-3 bg-gray-900 rounded-2xl overflow-hidden shadow-xl">
+                  {/* 리포트 헤더 */}
+                  <div className="flex justify-between items-center px-4 py-3 bg-gray-800">
+                    <p className="text-sm font-bold text-purple-300">🤖 AI 주간 점검 리포트</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(reportText).then(() => {
+                            setCopySuccess(true);
+                            setTimeout(() => setCopySuccess(false), 2500);
+                          });
+                        }}
+                        className={`px-3 py-1.5 text-xs font-bold rounded-lg transition ${
+                          copySuccess
+                            ? 'bg-emerald-500 text-white'
+                            : 'bg-purple-500 text-white hover:bg-purple-400'
+                        }`}
+                      >
+                        {copySuccess ? '✅ 복사됨!' : '📋 복사하기'}
+                      </button>
+                      <button
+                        onClick={() => setShowReport(false)}
+                        className="px-2 py-1.5 text-xs text-gray-400 hover:text-white transition"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 리포트 본문 */}
+                  <pre className="px-4 py-4 text-xs text-gray-200 leading-relaxed whitespace-pre-wrap break-words font-mono overflow-x-auto max-h-[60vh] overflow-y-auto">
+                    {reportText}
+                  </pre>
+
+                  {/* 복사 유도 안내 */}
+                  <div className="px-4 py-3 bg-gray-800 border-t border-gray-700">
+                    <p className="text-xs text-gray-400 text-center">
+                      📋 복사 후 ChatGPT / Claude에 붙여넣기 하세요
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* 자산 추가 버튼 / 폼 */}
             {!showAssetForm ? (
