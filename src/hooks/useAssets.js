@@ -108,7 +108,7 @@ export function useAssets() {
 
   // ─── 매수 처리 ────────────────────────────────────────────────────────────
   // qty, price: 이미 parseFloat된 숫자
-  const buyAsset = (assetId, qty, price, date, memo = '') => {
+  const buyAsset = (assetId, qty, price, date, memo = '', account = '') => {
     const newTx = {
       id: `tx_${Date.now()}`,
       date,
@@ -117,6 +117,7 @@ export function useAssets() {
       quantity: qty,
       price,
       memo,
+      account,
     };
     setTransactions(prev => [newTx, ...prev]);
     setAssets(prev => prev.map(a => {
@@ -128,7 +129,7 @@ export function useAssets() {
   };
 
   // ─── 매도 처리 ────────────────────────────────────────────────────────────
-  const sellAsset = (assetId, qty, price, date, memo = '') => {
+  const sellAsset = (assetId, qty, price, date, memo = '', account = '') => {
     const newTx = {
       id: `tx_${Date.now()}`,
       date,
@@ -137,6 +138,7 @@ export function useAssets() {
       quantity: qty,
       price,
       memo,
+      account,
     };
     setTransactions(prev => [newTx, ...prev]);
     setAssets(prev => prev.map(a => {
@@ -186,6 +188,35 @@ export function useAssets() {
     }
   };
 
+  // ─── 신규 종목 매수 (자산 자동 등록 + 거래 동시 처리) ─────────────────
+  // assetData: { group, account, name, ticker }
+  // 자산 추가 + 거래 이력을 한 번에 원자적으로 프로세싱 → React state 타이밍 문제 회피
+  const addAssetAndBuy = (assetData, qty, price, date, memo = '', account = '') => {
+    const newId = `asset_${Date.now()}`;
+    const newAsset = {
+      id: newId,
+      group:        assetData.group || '성장형',
+      account:      assetData.account || account || '',
+      name:         assetData.name,
+      ticker:       assetData.ticker ?? '',
+      quantity:     qty,
+      avgPrice:     Math.round(price),
+      currentPrice: Math.round(price),
+    };
+    const newTx = {
+      id: `tx_${Date.now() + 1}`,
+      date,
+      type: '매수',
+      assetId: newId,
+      quantity: qty,
+      price,
+      memo,
+      account,
+    };
+    setAssets(prev => [...prev, newAsset]);
+    setTransactions(prev => [newTx, ...prev]);
+  };
+
   // ─── 자산군별 요약 (Phase 2) ───────────────────────────────────
   // 반환값: [{ group, evalAmt, pct }]  — 전체 5개 개산 (0% 기보 포함)
   const getGroupSummary = () => {
@@ -223,5 +254,7 @@ export function useAssets() {
     totalPnLPct,
     // Phase 2 자산군별 요약
     getGroupSummary,
+    // Phase 3+ 신규 종목 매수 원자 등록
+    addAssetAndBuy,
   };
 }

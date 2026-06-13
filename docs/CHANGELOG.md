@@ -14,6 +14,31 @@
 
 ---
 
+## [Phase 3+] — 2026-06-13
+
+### 추가 (Added)
+- `addAssetAndBuy()` 함수 (`useAssets.js`) 신규 추가
+  - 신규 종목 매수 시 자산 등록 + 거래 이력을 원자적(atomic)으로 동시 처리
+  - React state 타이밍 문제 없이 단일 렌더 사이클에서 처리
+- 매매기록 탭 종목 선택 드롭다운 상단에 **"✏️ 신규 종목 직접 입력"** 옵션 추가
+- 신규 종목 선택 시 입력 패널 표시: 종목명 / 자산군 선택 / ticker(선택)
+- 매매기록 폼에 **계좌 선택 드롭다운** 추가 (6개 ACCOUNTS 상수 재사용)
+- 기존 종목 선택 시 해당 종목의 계좌 자동 반영
+
+### 변경 (Changed)
+- `buyAsset(assetId, qty, price, date, memo, account)` — account 파라미터 추가
+- `sellAsset(assetId, qty, price, date, memo, account)` — account 파라미터 추가
+- Transaction 모델 확장: `{ ..., account }` 필드 추가 (기존 거래는 account = '' 처리)
+- `submitTrade()` 전면 재작성: isNewAsset 분기 처리 + account 전달
+- 거래 이력 목록 항목 UI 개선: 계좌명 소문자 표시 (종목명 아래)
+
+### 유지 (Unchanged)
+- 기존 자산/거래 데이터 구조 호환 유지 (기존 거래의 account = undefined → '' 자동 처리)
+- localStorage 키 동일 (`golden_goose_assets`, `golden_goose_logs`)
+- Phase 1~3 모든 기능 유지
+
+---
+
 ## [Phase 3] — 2026-06-13
 
 ### 추가 (Added)

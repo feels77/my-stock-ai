@@ -350,6 +350,7 @@ export default function App() {
     totalPnL,
     totalPnLPct,
     getGroupSummary,
+    addAssetAndBuy,
   } = useAssets();
 
   // ─── 자산배분 목표 설정 (Phase 2) ────────────────────────────────
@@ -359,7 +360,12 @@ export default function App() {
   const [tradeForm, setTradeForm] = useState({
     date: new Date().toISOString().slice(0, 10),
     type: '매수',
-    assetId: '',
+    assetId: '',            // 기존 자산 ID
+    isNewAsset: false,      // true: 신규 종목 직접 입력
+    newAssetName: '',       // 신규 종목명
+    newAssetGroup: '성장형',  // 신규 종목 자산군
+    newAssetTicker: '',     // 신규 종목 ticker (선택)
+    account: 'KB증권 - ISA', // 계좌
     quantity: '',
     price: '',
     memo: '',
@@ -387,11 +393,16 @@ export default function App() {
   // ─── 상세 모달 상태 (UI 전용) ────────────────────────────────────
   const [selectedAsset, setSelectedAsset] = useState(null);
 
-  // ─── 거래 제출 (유효성 검사 → buyAsset / sellAsset 호출) ───────
+  // ─── 거래 제출 (유효성 검사 → buyAsset / sellAsset / addAssetAndBuy 호출) ──
   const submitTrade = () => {
-    const { date, type, assetId, quantity, price, memo } = tradeForm;
-    if (!date || !assetId || !quantity || !price) {
-      setTradeMsg('❗ 날짜, 종목, 수량, 단가를 입력해주세요.');
+    const {
+      date, type, assetId, isNewAsset,
+      newAssetName, newAssetGroup, newAssetTicker,
+      account, quantity, price, memo,
+    } = tradeForm;
+
+    if (!date || !quantity || !price) {
+      setTradeMsg('❗ 날짜, 수량, 단가를 입력해주세요.');
       return;
     }
     const qty = parseFloat(quantity);
@@ -401,15 +412,41 @@ export default function App() {
       return;
     }
 
-    if (type === '매수') {
-      buyAsset(assetId, qty, prc, date, memo);
+    if (isNewAsset) {
+      // ── 신규 종목: 자산 자동 등록 + 매수 동시 처리
+      if (!newAssetName.trim()) {
+        setTradeMsg('❗ 신규 종목명을 입력해주세요.');
+        return;
+      }
+      if (type !== '매수') {
+        setTradeMsg('❗ 신규 종목은 매수만 가능합니다. (먼저 매수 후 매도)');
+        return;
+      }
+      addAssetAndBuy(
+        { group: newAssetGroup, account, name: newAssetName.trim(), ticker: newAssetTicker.trim() },
+        qty, prc, date, memo, account
+      );
+      setTradeForm(prev => ({
+        ...prev, quantity: '', price: '', memo: '',
+        newAssetName: '', newAssetTicker: '',
+      }));
+      setTradeMsg(`✅ [${newAssetName.trim()}] 내자산 자동 등록 + 매수 완료!`);
     } else {
-      sellAsset(assetId, qty, prc, date, memo);
+      // ── 기존 자산: 기존 방식
+      if (!assetId) {
+        setTradeMsg('❗ 종목을 선택해주세요.');
+        return;
+      }
+      if (type === '매수') {
+        buyAsset(assetId, qty, prc, date, memo, account);
+      } else {
+        sellAsset(assetId, qty, prc, date, memo, account);
+      }
+      setTradeForm(prev => ({ ...prev, quantity: '', price: '', memo: '' }));
+      setTradeMsg(`✅ ${type} 거래가 등록됐습니다!`);
     }
 
-    setTradeForm(prev => ({ ...prev, quantity: '', price: '', memo: '' }));
-    setTradeMsg(`✅ ${type} 거래가 등록됐습니다!`);
-    setTimeout(() => setTradeMsg(''), 3000);
+    setTimeout(() => setTradeMsg(''), 3500);
   };
 
   // ─── 자산 추가 (유효성 검사 → addAsset 호출) ───────────────────
@@ -2633,22 +2670,86 @@ ${etfOpt.goal} 목적 포트폴리오
                   />
                 </div>
 
+                {/* ── 종목 선택 (기존 종목 / 신규 직접 입력) ── */}
                 <div className="col-span-2">
                   <p className="text-xs font-semibold text-gray-500 mb-1">종목 선택</p>
-                  <select value={tradeForm.assetId}
-                    onChange={e => setTradeForm(f => ({...f, assetId: e.target.value}))}
+                  <select
+                    value={tradeForm.isNewAsset ? '__NEW__' : tradeForm.assetId}
+                    onChange={e => {
+                      const v = e.target.value;
+                      if (v === '__NEW__') {
+                        setTradeForm(f => ({ ...f, assetId: '', isNewAsset: true }));
+                      } else {
+                        const sel = assets.find(a => a.id === v);
+                        setTradeForm(f => ({
+                          ...f, assetId: v, isNewAsset: false,
+                          account: sel?.account || f.account,
+                        }));
+                      }
+                    }}
                     className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:border-blue-400 focus:outline-none bg-white"
                   >
                     <option value="">종목을 선택하세요</option>
+                    <option value="__NEW__">✏️ 신규 종목 직접 입력</option>
                     {assets.map(a => (
                       <option key={a.id} value={a.id}>
                         {a.name}{a.ticker ? ` (${a.ticker})` : ''} — {a.account}
                       </option>
                     ))}
                   </select>
-                  {assets.length === 0 && (
-                    <p className="text-xs text-amber-500 mt-1">⚠️ 내자산 탭에서 먼저 자산을 추가해주세요.</p>
+
+                  {/* 신규 종목 입력 패널 */}
+                  {tradeForm.isNewAsset && (
+                    <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-xl space-y-2">
+                      <p className="text-xs font-bold text-blue-700">📝 신규 종목 정보 입력</p>
+                      <input
+                        type="text"
+                        value={tradeForm.newAssetName}
+                        onChange={e => setTradeForm(f => ({ ...f, newAssetName: e.target.value }))}
+                        placeholder="종목명 (예: TIGER 미국나스닥100)"
+                        className="w-full px-3 py-2 border-2 border-blue-200 rounded-lg text-sm focus:border-blue-400 focus:outline-none"
+                      />
+                      <div className="flex gap-2">
+                        <select
+                          value={tradeForm.newAssetGroup}
+                          onChange={e => setTradeForm(f => ({ ...f, newAssetGroup: e.target.value }))}
+                          className="flex-1 px-2 py-2 border-2 border-blue-200 rounded-lg text-xs bg-white focus:border-blue-400 focus:outline-none"
+                        >
+                          {['연금형','성장형','방어형','파킹형','현금'].map(g => (
+                            <option key={g} value={g}>{g}</option>
+                          ))}
+                        </select>
+                        <input
+                          type="text"
+                          value={tradeForm.newAssetTicker}
+                          onChange={e => setTradeForm(f => ({ ...f, newAssetTicker: e.target.value }))}
+                          placeholder="Ticker (선택)"
+                          className="flex-1 px-2 py-2 border-2 border-blue-200 rounded-lg text-xs focus:border-blue-400 focus:outline-none"
+                        />
+                      </div>
+                      <p className="text-xs text-blue-600">💡 매수 완료 시 내자산 탭에 자동 등록됩니다</p>
+                    </div>
                   )}
+
+                  {assets.length === 0 && !tradeForm.isNewAsset && (
+                    <p className="text-xs text-amber-500 mt-1">
+                      ⚠️ 내자산 탭에서 자산을 추가하거나, "신규 종목 직접 입력"을 선택하세요.
+                    </p>
+                  )}
+                </div>
+
+                {/* ── 계좌 선택 ── */}
+                <div className="col-span-2">
+                  <p className="text-xs font-semibold text-gray-500 mb-1">계좌</p>
+                  <select
+                    value={tradeForm.account}
+                    onChange={e => setTradeForm(f => ({ ...f, account: e.target.value }))}
+                    className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:border-blue-400 focus:outline-none bg-white"
+                  >
+                    {ACCOUNTS.map(ac => (
+                      <option key={ac} value={ac}>{ac}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
@@ -2720,12 +2821,17 @@ ${etfOpt.goal} 목적 포트폴리오
                     const a2 = assets.find(a => a.id === tx.assetId);
                     return (
                       <div key={tx.id} className="flex items-center gap-2 text-xs py-1.5 border-b border-gray-50">
-                        <span className={`px-1.5 py-0.5 rounded font-bold ${
+                        <span className={`px-1.5 py-0.5 rounded font-bold flex-shrink-0 ${
                           tx.type === '매수' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-600'
                         }`}>{tx.type}</span>
-                        <span className="text-gray-400">{tx.date}</span>
-                        <span className="flex-1 font-medium text-gray-700 truncate">{a2?.name ?? '-'}</span>
-                        <span className="text-gray-600 font-bold">₩{fmtNum(Math.round(tx.quantity * tx.price))}</span>
+                        <span className="text-gray-400 flex-shrink-0">{tx.date}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-gray-700 truncate">{a2?.name ?? '-'}</p>
+                          {(tx.account || a2?.account) && (
+                            <p className="text-gray-400 truncate text-[10px]">{tx.account || a2?.account}</p>
+                          )}
+                        </div>
+                        <span className="text-gray-600 font-bold flex-shrink-0">₩{fmtNum(Math.round(tx.quantity * tx.price))}</span>
                       </div>
                     );
                   })}
