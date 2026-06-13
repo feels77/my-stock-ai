@@ -1,6 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAssets } from './hooks/useAssets';
+import useTargetAllocation from './hooks/useTargetAllocation';
 import AssetDetailModal from './components/AssetDetailModal';
+import AllocationPanel from './components/AllocationPanel';
+
+// ─── 고정 계좌 목록 (Phase 2) ────────────────────────────────────────────────────────────────────────────────────────
+const ACCOUNTS = [
+  'KB증권 - CMA',
+  'KB증권 - ISA',
+  'KB증권 - 신연금저축',
+  'KB증권 - 신연금저축2',
+  'KB증권 - 개인퇴직연금(IRP)',
+  '토스증권 - 미국주식',
+];
 
 // 종목 데이터
 const KOREA_STOCKS = ['삼성전자', 'SK하이닉스', 'NAVER', '카카오', 'LG에너지솔루션', '현대차', '셀트리온', '삼성SDI', '기아', 'POSCO홀딩스'];
@@ -337,7 +349,11 @@ export default function App() {
     totalCost,
     totalPnL,
     totalPnLPct,
+    getGroupSummary,
   } = useAssets();
+
+  // ─── 자산배분 목표 설정 (Phase 2) ────────────────────────────────
+  const { target, updateTarget } = useTargetAllocation();
 
   // ─── 거래 입력 폼 상태 (UI 전용) ────────────────────────────────
   const [tradeForm, setTradeForm] = useState({
@@ -353,7 +369,7 @@ export default function App() {
   // ─── 자산 추가 폼 상태 (UI 전용) ────────────────────────────────
   const [assetForm, setAssetForm] = useState({
     group: '연금형',
-    account: '연금저축',
+    account: 'KB증권 - ISA',
     name: '',
     ticker: '',
     quantity: '',
@@ -399,7 +415,7 @@ export default function App() {
       return;
     }
     addAsset({ group, account, name, ticker: ticker || '', quantity, avgPrice, currentPrice });
-    setAssetForm({ group: '연금형', account: '연금저축', name: '', ticker: '', quantity: '', avgPrice: '', currentPrice: '' });
+    setAssetForm({ group: '연금형', account: 'KB증권 - ISA', name: '', ticker: '', quantity: '', avgPrice: '', currentPrice: '' });
     setShowAssetForm(false);
     setAssetMsg(`✅ ${name} 자산이 추가됐습니다!`);
     setTimeout(() => setAssetMsg(''), 3000);
@@ -2278,21 +2294,12 @@ ${etfOpt.goal} 목적 포트폴리오
               </div>
             </div>
 
-            {/* 그룹별 요약 */}
-            <div className="grid grid-cols-3 gap-2 mb-4">
-              {Object.entries(GROUP_COLORS).map(([grp, color]) => {
-                const grpAssets = assets.filter(a => a.group === grp);
-                const grpVal = grpAssets.reduce((s, a) => s + a.quantity * a.currentPrice, 0);
-                const grpPct = totalAssetValue > 0 ? (grpVal / totalAssetValue * 100).toFixed(1) : '0.0';
-                return (
-                  <div key={grp} className="bg-white rounded-xl p-3 shadow text-center">
-                    <div className="w-3 h-3 rounded-full mx-auto mb-1" style={{ backgroundColor: color }}></div>
-                    <p className="text-xs font-bold text-gray-700">{grp}</p>
-                    <p className="text-xs text-gray-500">{grpPct}%</p>
-                  </div>
-                );
-              })}
-            </div>
+            {/* 자산배분 신호등 (Phase 2) */}
+            <AllocationPanel
+              groupSummary={getGroupSummary()}
+              target={target}
+              onUpdateTarget={updateTarget}
+            />
 
             {/* 자산 목록 */}
             {assets.length === 0 ? (
@@ -2389,14 +2396,15 @@ ${etfOpt.goal} 목적 포트폴리오
 
                 <div className="mb-3">
                   <p className="text-xs font-semibold text-gray-500 mb-1">계좌</p>
-                  <div className="flex flex-wrap gap-2">
-                    {['연금저축','IRP','ISA','일반계좌','CMA'].map(ac => (
-                      <button key={ac} onClick={() => setAssetForm(f => ({...f, account: ac}))}
-                        className={`px-3 py-1.5 rounded-lg text-sm font-medium border-2 ${
-                          assetForm.account === ac ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-600'
-                        }`}>{ac}</button>
+                  <select
+                    value={assetForm.account}
+                    onChange={e => setAssetForm(f => ({...f, account: e.target.value}))}
+                    className="w-full px-3 py-2 border-2 border-gray-200 rounded-xl text-sm focus:border-indigo-400 focus:outline-none bg-white"
+                  >
+                    {ACCOUNTS.map(ac => (
+                      <option key={ac} value={ac}>{ac}</option>
                     ))}
-                  </div>
+                  </select>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 mb-3">

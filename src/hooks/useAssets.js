@@ -186,6 +186,18 @@ export function useAssets() {
     }
   };
 
+  // ─── 자산군별 요약 (Phase 2) ───────────────────────────────────
+  // 반환값: [{ group, evalAmt, pct }]  — 전체 5개 개산 (0% 기보 포함)
+  const getGroupSummary = () => {
+    const groups = ['연금형', '성장형', '방어형', '파킹형', '현금'];
+    return groups.map(group => {
+      const groupAssets = assets.filter(a => a.group === group);
+      const evalAmt = groupAssets.reduce((s, a) => s + a.quantity * a.currentPrice, 0);
+      const pct = totalAssetValue > 0 ? (evalAmt / totalAssetValue) * 100 : 0;
+      return { group, evalAmt, pct };
+    });
+  };
+
   // ─── 공개 인터페이스 ──────────────────────────────────────────────────────
   return {
     // 상태
@@ -209,5 +221,7 @@ export function useAssets() {
     totalCost,
     totalPnL,
     totalPnLPct,
+    // Phase 2 자산군별 요약
+    getGroupSummary,
   };
 }
